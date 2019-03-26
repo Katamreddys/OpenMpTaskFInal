@@ -1,12 +1,15 @@
+#include <omp.h>
 #include <stdio.h>
+#include <iostream>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <iostream>
 #include <unistd.h>
-#include <omp.h>
+#include <algorithm>
+#include <math.h>
+#include <stdlib.h>
 #include <chrono>
-
+#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -19,11 +22,12 @@ extern "C" {
 }
 #endif
 
-int lcs_cal( char *X, int m, char *Y,  int n, int nbthreads ) 
+
+int compute_lcs( char *X, int m, char *Y,  int n, int nbthreads ) 
 { 
-  int** partial_arr = new int*[m+1];
+  int** temp_arr = new int*[m+1];
   for (int i=0; i<=m; ++i) {
-    partial_arr[i] = new int[n+1];
+    temp_arr[i] = new int[n+1];
   }
   
   int i, j; 
@@ -34,23 +38,23 @@ int lcs_cal( char *X, int m, char *Y,  int n, int nbthreads )
     for (j=0; j<=n; j++) 
     { 
       if (i == 0 || j == 0) 
-        partial_arr[i][j] = 0; 
+        temp_arr[i][j] = 0; 
 
       else if (X[i-1] == Y[j-1]) 
-        partial_arr[i][j] = partial_arr[i-1][j-1] + 1; 
+        temp_arr[i][j] = temp_arr[i-1][j-1] + 1; 
 
       else
-        partial_arr[i][j] = std::max(partial_arr[i-1][j], partial_arr[i][j-1]); 
+        temp_arr[i][j] = std::max(temp_arr[i-1][j], temp_arr[i][j-1]); 
     } 
   } 
 
-  int result = partial_arr[m][n];
+  int result = temp_arr[m][n];
   
   #pragma omp taskwait
   for (int i=0; i<=m; ++i) { 
-    delete[] partial_arr[i];
+    delete[] temp_arr[i];
   }
-  delete[] partial_arr;
+  delete[] temp_arr;
   
   return result; 
   
@@ -60,8 +64,8 @@ int lcs_cal( char *X, int m, char *Y,  int n, int nbthreads )
 
 int main (int argc, char* argv[]) {
 
-  //forces openmp to create the threads beforehand
-#pragma omp parallel
+//forces openmp to create the threads beforehand
+  #pragma omp parallel
   {
     int fd = open (argv[0], O_RDONLY);
     if (fd != -1) {
@@ -76,25 +80,34 @@ int main (int argc, char* argv[]) {
     return -1;
   }
 
+  int nbthreads = atoi(argv[3]);
+  omp_set_num_threads(nbthreads);
+  
   int m = atoi(argv[1]);
   int n = atoi(argv[2]);
 
   // get string data 
   char *X = new char[m];
   char *Y = new char[n];
-  int nbthreads = atoi(argv[3]);
-  omp_set_num_threads(nbthreads);
   generateLCS(X, m, Y, n);
 
   
-  //insert LCS code here.
-  int result = -1; // length of common subsequence
-  auto timeStart = std::chrono::system_clock::now();
-  result = lcs_cal( X, m, Y,  n, nbthreads );
-  auto timeEnd = std::chrono::system_clock::now();
-  std::chrono::duration<double> total_time = timeEnd-timeStart;
-  checkLCS(X, m, Y, n, result);
+  auto clock_start = std::chrono::system_clock::now();
+
+  int lcs_res = 0;
+  
+  #pragma omp parallel
+  #pragma omp single nowait
+  lcs_res = compute_lcs( X, m, Y, n , nbthreads) ;
+  
+  auto clock_end =  std::chrono::system_clock::now();
+  std::chrono::duration<double> total_time = clock_end-clock_start;
+
+  checkLCS(X, m, Y, n, lcs_res);
   std::cerr<<total_time.count()<<std::endl;
+
+  delete[] X;
+  delete[] Y;
 
   return 0;
 }
