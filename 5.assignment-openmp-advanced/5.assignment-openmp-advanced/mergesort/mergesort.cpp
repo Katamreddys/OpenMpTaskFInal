@@ -21,55 +21,48 @@ extern "C" {
 #endif
 
 
-//Merge function to merge all and sort the arrays(same as in sequential sort)
-void merge(int * arr, int array_start, int array_center, int array_end,int * temp_arr) 
+void merge(int * arr, int begin, int middle, int end,int * work_arr) 
 { 
   int i, j, k; 
-  for(i=array_start,j=array_center+1,k=array_start;i<=array_center &&j<=array_end;)
+  for(i=begin,j=middle+1,k=begin;i<=middle &&j<=end;)
   {
     if(arr[i] <arr[j]){
-      temp_arr[k] = arr[i];
+      work_arr[k] = arr[i];
       i++; k++;
     }
     else
     {
-      temp_arr[k] = arr[j];
+      work_arr[k] = arr[j];
       j++; k++;
      }           
   }
-  if(i <= array_center)
+  if(i <= middle)
   {
-   for(;i<=array_center;i++,k++)
-    temp_arr[k] = arr[i];
+   for(;i<=middle;i++,k++)
+    work_arr[k] = arr[i];
   }
-  if(j <= array_end)
+  if(j <= end)
   {
-   for(;j<=array_end;j++,k++)
-    temp_arr[k] = arr[j];
+   for(;j<=end;j++,k++)
+    work_arr[k] = arr[j];
   }
-  for(i = array_start;i<=array_end;i++)
-      arr[i] = temp_arr[i];
+  for(i = begin;i<=end;i++)
+      arr[i] = work_arr[i];
 } 
 
-//Declaring granualrity before so we have to use this for computating sort with good performance.
 int granularity;
 
-void mergesort(int * arr, int array_start, int array_end,int * temp_arr) 
+void mergesort(int * arr, int begin, int end,int * work_arr) 
 {
-  //THis will stop the execution if array_start is grater than array_end
-  if( array_start >= array_end)
+  if( begin >= end)
     return;
-  int array_center = (array_start+array_end)/2; //calculating the center(middle) position in the array to  to divide into two halves recursively
-  
-  //Run parallel task for all first half of arrays recursively
-  #pragma omp task untied firstprivate(arr,temp_arr,array_start,array_center,granularity)
-    mergesort(arr,array_start,array_center,temp_arr);
-  //Run parallel task for all second half of arrays recursively  
-  #pragma omp task untied firstprivate(arr,temp_arr,array_end,array_center,granularity)
-    mergesort(arr,array_center+1,array_end,temp_arr);
-  //wait for tasks to finish and merge the arrays using the merge function  
+  int middle = (begin+end)/2;
+  #pragma omp task untied firstprivate(arr,work_arr,begin,middle,granularity)
+    mergesort(arr,begin,middle,work_arr);
+  #pragma omp task untied firstprivate(arr,work_arr,end,middle,granularity)
+    mergesort(arr,middle+1,end,work_arr);
   #pragma omp taskwait
-  merge(arr,array_start,array_center,array_end,temp_arr);
+  merge(arr,begin,middle,end,work_arr);
 }
 
 
@@ -91,35 +84,35 @@ int main (int argc, char* argv[]) {
   }
 
   int n = atoi(argv[1]);
-  int nbthreads= atoi(argv[2]);
-  granularity = n/nbthreads;//calculate granularity to find the chunk size.
+  
   
   // get arr data
   int * arr = new int [n];
+  int * work_arr = new int [n];
   generateMergeSortData (arr, n);
 
-  int * temp_arr = new int [n];//New array for computing merge sort
-  omp_set_num_threads(nbthreads);//Create threads for parallel computing code
 
-  //insert sorting code here.
-  auto clock_start = std::chrono::system_clock::now(); //Start of clock just bnefore merge begins.
-  //Start of parallel code for merge sort.
-  #pragma omp parallel
-  { 
-    #pragma omp single
-    {
-      //Implement Merge Sort on created array 'arr'.
-      mergesort(arr,0,n-1,temp_arr);
-    }  
-  }
-  auto clock_end = std::chrono::system_clock::now(); //End of clock once merge ends.
-  std::chrono::duration<double> total_time = clock_end-clock_start;//Total time for execution.
+  int nbthreads= atoi(argv[2]);
+  granularity = n/nbthreads;
+  omp_set_num_threads(nbthreads);
+
+  
+  auto timeStart = std::chrono::system_clock::now();
+    #pragma omp parallel
+    { 
+      #pragma omp single
+      {
+        mergesort(arr,0,n-1,work_arr);
+      }  
+    }
+  auto timeEnd = std::chrono::system_clock::now();
+  std::chrono::duration<double> total_time = timeEnd-timeStart;
    
-  checkMergeSortResult (arr, n);//Check if merge is correct or not
+  checkMergeSortResult (arr, n);
   std::cerr<<total_time.count()<<std::endl;
   
   delete[] arr;
-  delete[] temp_arr;
+  delete[] work_arr;
 
   return 0;
 }
